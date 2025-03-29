@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use arrow::array::{Array, ArrayAccessor, ArrayBuilder, ArrayRef, AsArray, Datum, Int64Array, StringArray, StringArrayType, GenericByteViewArray};
+use arrow::array::{Array, ArrayAccessor, ArrayBuilder, ArrayRef, AsArray, Datum, Int64Array, StringArray, StringArrayType, GenericStringArray};
 use arrow::datatypes::{DataType, Int64Type, StringViewType, ByteViewType};
 use arrow::datatypes::{
     DataType::Int64, DataType::LargeUtf8, DataType::Utf8, DataType::Utf8View,
@@ -239,9 +239,10 @@ pub fn regexp_instr(
     });
 
 
-    regexp_instr_inner(
-            values.as_string(),
-            regex_array.as_string(),
+    match (values.data_type(), regex_array.data_type(), flags_array) {
+        (Utf8, Utf8, None) => regexp_instr_inner(
+            values.as_string::<i32>(),
+            regex_array.as_string::<i32>(),
             is_regex_scalar,
             start_array.map(|start| start.as_primitive::<Int64Type>()),
             is_start_scalar,
@@ -249,11 +250,90 @@ pub fn regexp_instr(
             is_nth_scalar,
             endoption_array.map(|endoption| endoption.as_primitive::<Int64Type>()),
             is_endoption_scalar,
-            flags_array.map(|x| x.as_string()),
+            None,
             is_flags_scalar,
             subexpr_array.map(|subexpr| subexpr.as_primitive::<Int64Type>()),
             is_subexpr_scalar,
-        )
+        ),
+        (Utf8, Utf8, Some(flags_array)) if *flags_array.data_type() == Utf8 => regexp_instr_inner(
+            values.as_string::<i32>(),
+            regex_array.as_string::<i32>(),
+            is_regex_scalar,
+            start_array.map(|start| start.as_primitive::<Int64Type>()),
+            is_start_scalar,
+            nth_array.map(|nth| nth.as_primitive::<Int64Type>()),
+            is_nth_scalar,
+            endoption_array.map(|endoption| endoption.as_primitive::<Int64Type>()),
+            is_endoption_scalar,
+            Some(flags_array.as_string::<i32>()),
+            is_flags_scalar,
+            subexpr_array.map(|subexpr| subexpr.as_primitive::<Int64Type>()),
+            is_subexpr_scalar,
+        ),
+        (LargeUtf8, LargeUtf8, None) => regexp_instr_inner(
+            values.as_string::<i64>(),
+            regex_array.as_string::<i64>(),
+            is_regex_scalar,
+            start_array.map(|start| start.as_primitive::<Int64Type>()),
+            is_start_scalar,
+            nth_array.map(|nth| nth.as_primitive::<Int64Type>()),
+            is_nth_scalar,
+            endoption_array.map(|endoption| endoption.as_primitive::<Int64Type>()),
+            is_endoption_scalar,
+            None,
+            is_flags_scalar,
+            subexpr_array.map(|subexpr| subexpr.as_primitive::<Int64Type>()),
+            is_subexpr_scalar,
+        ),
+        (LargeUtf8, LargeUtf8, Some(flags_array)) if *flags_array.data_type() == LargeUtf8 => regexp_instr_inner(
+            values.as_string::<i64>(),
+            regex_array.as_string::<i64>(),
+            is_regex_scalar,
+            start_array.map(|start| start.as_primitive::<Int64Type>()),
+            is_start_scalar,
+            nth_array.map(|nth| nth.as_primitive::<Int64Type>()),
+            is_nth_scalar,
+            endoption_array.map(|endoption| endoption.as_primitive::<Int64Type>()),
+            is_endoption_scalar,
+            Some(flags_array.as_string::<i64>()),
+            is_flags_scalar,
+            subexpr_array.map(|subexpr| subexpr.as_primitive::<Int64Type>()),
+            is_subexpr_scalar,
+        ),
+        (Utf8View, Utf8View, None) => regexp_instr_inner(
+            values.as_string_view(),
+            regex_array.as_string_view(),
+            is_regex_scalar,
+            start_array.map(|start| start.as_primitive::<Int64Type>()),
+            is_start_scalar,
+            nth_array.map(|nth| nth.as_primitive::<Int64Type>()),
+            is_nth_scalar,
+            endoption_array.map(|endoption| endoption.as_primitive::<Int64Type>()),
+            is_endoption_scalar,
+            None,
+            is_flags_scalar,
+            subexpr_array.map(|subexpr| subexpr.as_primitive::<Int64Type>()),
+            is_subexpr_scalar,
+        ),
+        (Utf8View, Utf8View, Some(flags_array)) if *flags_array.data_type() == Utf8View => regexp_instr_inner(
+            values.as_string_view(),
+            regex_array.as_string_view(),
+            is_regex_scalar,
+            start_array.map(|start| start.as_primitive::<Int64Type>()),
+            is_start_scalar,
+            nth_array.map(|nth| nth.as_primitive::<Int64Type>()),
+            is_nth_scalar,
+            endoption_array.map(|endoption| endoption.as_primitive::<Int64Type>()),
+            is_endoption_scalar,
+            Some(flags_array.as_string_view()),
+            is_flags_scalar,
+            subexpr_array.map(|subexpr| subexpr.as_primitive::<Int64Type>()),
+            is_subexpr_scalar,
+        ),
+        _ => Err(ArrowError::ComputeError(
+            "regexp_count() expected the input arrays to be of type Utf8, LargeUtf8, or Utf8View and the data types of the values, regex_array, and flags_array to match".to_string(),
+        )),
+    }
     }
 
 
@@ -310,9 +390,23 @@ pub fn regexp_instr(
 //     }
 // }
 
-pub fn regexp_instr_inner(
-    values: &StringArray,
-    regex_array: &StringArray,
+enum ScalarOrArray<T> {
+    Scalar(T),
+    Array(Vec<T>),
+}
+
+impl< T: Clone> ScalarOrArray<T> {
+    fn iter(&self, len: usize) -> Box<dyn Iterator<Item = T> + '_> {
+        match self {
+            ScalarOrArray::Scalar(val) => Box::new(std::iter::repeat(val.clone()).take(len)),
+            ScalarOrArray::Array(arr) => Box::new(arr.iter().cloned()),
+        }
+    }
+}
+
+pub fn regexp_instr_inner<'a, S>(
+    values: S,
+    regex_array: S,
     is_regex_scalar: bool,
     start_array: Option<&Int64Array>,
     is_start_scalar: bool,
@@ -320,139 +414,115 @@ pub fn regexp_instr_inner(
     is_nth_scalar: bool,
     endoption_array: Option<&Int64Array>,
     is_endoption_scalar: bool,
-    flags_array: Option<&StringArray>,
+    flags_array: Option<S>,
     is_flags_scalar: bool,
-    subexpr_array: Option<&Int64Array>,
-    is_subexpr_scalar: bool,
-) -> Result<ArrayRef, ArrowError> 
+    subexp_array: Option<&Int64Array>,
+    is_subexp_scalar: bool,
+) -> Result<ArrayRef, ArrowError>
+where
+    S: StringArrayType<'a>,
 {
-    // let regex_array = cast_to_array(regex_array, is_regex_scalar, values.len());
-    if let regex_array = regex_array {
-        if is_regex_scalar || regex_array.len() == 1 {
-            // StringBuilder::new(vec![regex_array.value(0); values.len()])
-            Some(&StringArray::from(vec![regex_array.value(0); values.len()]))
-        } else if regex_array.len() == values.len() as usize {
-            Some(regex_array)
-        } else {
-            return Err(ArrowError::ComputeError(format!(
-                "Argument array must be the same length as values array; got {} and {}",
-                regex_array.len(),
-                values.len(),
-            )))
-        }
-    } else {
-            None
-        };
+    let len = values.len();
 
-    let start_array = 
-    if let Some(start_array) = start_array {
-        if is_start_scalar || start_array.len() == 1 {
-            &Int64Array::from(vec![start_array.value(0); values.len()])
-        } else if start_array.len() == values.len() as usize {
-            start_array
-        } else {
-            return Err(ArrowError::ComputeError(format!(
-                "Argument array must be the same length as values array; got {} and {}",
-                start_array.len(),
-                values.len(),
-            )))
-        }
+    let regex_input = if is_regex_scalar || regex_array.len() == 1 {
+        ScalarOrArray::Scalar(regex_array.value(0))
     } else {
-            &Int64Array::from(vec![1; values.len()])
-        };
-    
-    let nth_array = 
-        if let Some(nth_array) = nth_array {
-            if is_nth_scalar || nth_array.len() == 1 {
-                &Int64Array::from(vec![nth_array.value(0); values.len()])
-            } else if nth_array.len() == values.len() as usize {
-                nth_array
-            } else {
-                return Err(ArrowError::ComputeError(format!(
-                    "Argument array must be the same length as values array; got {} and {}",
-                    nth_array.len(),
-                    values.len(),
-                )))
-            }
-        } else {
-                &Int64Array::from(vec![1; values.len()])
-            };
-    
-    let endoption_array = 
-        if let Some(endoption_array) = endoption_array {
-            if is_endoption_scalar || endoption_array.len() == 1 {
-                &Int64Array::from(vec![endoption_array.value(0); values.len()])
-            } else if endoption_array.len() == values.len() as usize {
-                endoption_array
-            } else {
-                return Err(ArrowError::ComputeError(format!(
-                    "Argument array must be the same length as values array; got {} and {}",
-                    endoption_array.len(),
-                    values.len(),
-                )))
-            }
-        } else {
-                &Int64Array::from(vec![1; values.len()])
-            };
-    // let flags_array = cast_to_array(flags_array, is_flags_scalar, values.len());
-    let flags_array = 
-    if let Some(flags_array) = flags_array {
-        if is_flags_scalar || flags_array.len() == 1 {
-            &StringArray::from(vec![flags_array.value(0); values.len()])
-        } else if flags_array.len() == values.len() as usize {
-            flags_array
-        } else {
-            return Err(ArrowError::ComputeError(format!(
-                "Argument array must be the same length as values array; got {} and {}",
-                flags_array.len(),
-                values.len(),
-            )))
-        }
-    } else {
-        &StringArray::from(vec!["".to_string(); values.len()])
+        let regex_vec: Vec<&str> = regex_array.iter().map(|v| v.unwrap_or("")).collect();
+        ScalarOrArray::Array(regex_vec)
     };
 
-let subexpr_array  =
-    if let Some(subexpr_array) = subexpr_array {
-        if is_subexpr_scalar || subexpr_array.len() == 1 {
-            &Int64Array::from(vec![subexpr_array.value(0); values.len()])
-        } else if subexpr_array.len() == values.len() as usize {
-            subexpr_array
+    let start_input = if let Some(start) = start_array {
+        if is_start_scalar || start.len() == 1 {
+            ScalarOrArray::Scalar(start.value(0))
         } else {
-            return Err(ArrowError::ComputeError(format!(
-                "Argument array must be the same length as values array; got {} and {}",
-                subexpr_array.len(),
-                values.len(),
-            )))
+            let start_vec: Vec<i64> = start_array
+                .iter()
+                .map(|array| array.value(0)) // Extract the value from the array
+                .collect();
+            ScalarOrArray::Array(start_vec)
         }
     } else {
-        &Int64Array::from(vec![1; values.len()])
+        
+        ScalarOrArray::Scalar(1) // Default start = 1
     };
 
-let mut regex_cache = HashMap::new();
+    let nth_input = if let Some(nth) = nth_array {
+        if is_nth_scalar || nth.len() == 1 {
+            ScalarOrArray::Scalar(nth.value(0))
+        } else {
+            let nth_vec: Vec<i64> = nth_array
+                .iter()
+                .map(|array| array.value(0)) // Extract the value from the array
+                .collect();
+            ScalarOrArray::Array(nth_vec)
+        }
+    } else {
+        ScalarOrArray::Scalar(1) // Default nth = 0
+    };
 
-Ok(Arc::new(
-    izip!(
+    let endoption_input = if let Some(endoption) = endoption_array {
+        if is_endoption_scalar || endoption.len() == 1 {
+            ScalarOrArray::Scalar(endoption.value(0))
+        } else {
+            let endoption_vec: Vec<i64> = endoption_array
+                .iter()
+                .map(|array| array.value(0)) // Extract the value from the array
+                .collect();
+            ScalarOrArray::Array(endoption_vec)
+        }
+    } else {
+        ScalarOrArray::Scalar(0) // Default endoption = 0
+    };
+
+    let flags_input = if let Some(ref flags) = flags_array {
+        if is_flags_scalar || flags.len() == 1 {
+            ScalarOrArray::Scalar(flags.value(0))
+        } else {
+            let flags_vec: Vec<&str> = flags.iter().map(|v| v.unwrap_or("")).collect();
+            ScalarOrArray::Array(flags_vec)
+        }
+    } else {
+        ScalarOrArray::Scalar("") // Default flags = ""
+    };
+
+    let subexp_input = if let Some(subexp) = subexp_array {
+        if is_subexp_scalar || subexp.len() == 1 {
+            ScalarOrArray::Scalar(subexp.value(0))
+        } else {
+            let subexp_vec: Vec<i64> = subexp_array
+                .iter()
+                .map(|array| array.value(0)) // Extract the value from the array
+                .collect();
+            ScalarOrArray::Array(subexp_vec)
+        }
+    } else {
+        ScalarOrArray::Scalar(0) // Default subexp = 0
+    };
+
+    let mut regex_cache = HashMap::new();
+
+    let result: Result<Vec<i64>, ArrowError> = izip!(
         values.iter(),
-        regex_array.iter(),
-        start_array.iter(),
-        nth_array.iter(),
-        endoption_array.iter(),
-        flags_array.iter(),
-        subexpr_array.iter()
+        regex_input.iter(len),
+        start_input.iter(len),
+        nth_input.iter(len),
+        endoption_input.iter(len),
+        flags_input.iter(len),
+        subexp_input.iter(len)
     )
-    .map(|(value, regex, start, n, endoption, flags, subexpr)| {
-        let pattern =
-            compile_and_cache_regex(regex.unwrap(), flags, &mut regex_cache)?;
-        get_index(value, pattern, start, n, endoption, subexpr)
+    .map(|(value, regex, start, nth, endoption, flags, subexp)| {
+        if regex.is_empty() {
+            return Ok(0);
+        }
+
+        let pattern = compile_and_cache_regex(&regex, Some(flags), &mut regex_cache)?;
+
+        get_index(value, &pattern, start, nth, endoption, subexp)
     })
-    .collect::<Result<Int64Array, ArrowError>>()?
-))
-}
+    .collect();
 
-
-    
-    
+    Ok(Arc::new(Int64Array::from(result?)))
+}   
 
 fn compile_and_cache_regex<'strings, 'cache>(
     regex: &'strings str,
@@ -496,24 +566,24 @@ fn compile_regex(regex: &str, flags: Option<&str>) -> Result<Regex, ArrowError> 
 fn get_index(
     value: Option<&str>,
     pattern: &Regex,
-    start: Option<i64>,
-    n: Option<i64>,
-    endoption: Option<i64>,
-    subexpr: Option<i64>,
+    start: i64,
+    n: i64,
+    endoption: i64,
+    subexpr: i64,
 ) -> Result<i64, ArrowError> {
     let value = match value {
         None | Some("") => return Ok(0),
         Some(value) => value,
     };
 
-    let start = start.unwrap_or(1);
+    // let start = start.unwrap_or(1);
     if start < 1 {
         return Err(ArrowError::ComputeError(
             "regexp_instr() requires start to be 1-based".to_string(),
         ));
     }
     
-    let n = n.unwrap_or(1); // Default to finding the first match
+    // let n = n.unwrap_or(1); // Default to finding the first match
     if n < 1 {
         return Err(ArrowError::ComputeError(
             "N must be 1 or greater".to_string(),
@@ -532,21 +602,21 @@ fn get_index(
     let match_end = nth_match.1.end() as i64 + start - 1;
     
     let result_index = match endoption {
-        Some(1) => match_end,  // Return end position of match
+        1 => match_end,  // Return end position of match
         _ => match_start,      // Default: Return start position
     };
     
     // Handle subexpression capturing (if requested)
-    if let Some(subexpr) = subexpr {
-        if subexpr > 0 {
-            if let Some(captures) = pattern.captures(&find_slice) {
-                if let Some(matched) = captures.get(subexpr as usize) {
-                    return Ok(matched.start() as i64 + start - 1);
-                }
+    
+    if subexpr > 0 {
+        if let Some(captures) = pattern.captures(&find_slice) {
+            if let Some(matched) = captures.get(subexpr as usize) {
+                return Ok(matched.start() as i64 + start - 1);
             }
-            return Ok(0); // Return 0 if the subexpression was not found
         }
+        return Ok(0); // Return 0 if the subexpression was not found
     }
+    
     
     Ok(result_index)
 }
