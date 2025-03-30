@@ -27,7 +27,7 @@ use datafusion_expr::{
     TypeSignature::Uniform, Volatility,
 };
 use datafusion_macros::user_doc;
-use itertools::izip;
+use itertools::{izip, Itertools};
 use regex::Regex;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -548,7 +548,7 @@ fn compile_regex(regex: &str, flags: Option<&str>) -> Result<Regex, ArrowError> 
         Some(flags) => {
             if flags.contains("g") {
                 return Err(ArrowError::ComputeError(
-                    "regexp_count() does not support global flag".to_string(),
+                    "regexp_instr() does not support global flag".to_string(),
                 ));
             }
             format!("(?{}){}", flags, regex)
@@ -591,27 +591,33 @@ fn get_index(
     }
     
     let find_slice = value.chars().skip(start as usize - 1).collect::<String>();
-    let mut matches = pattern.find_iter(&find_slice).enumerate();
+    let matches: Vec<_> = pattern.find_iter(&find_slice).collect();
     
-    // Find the N-th match (1-based index)
-    let nth_match = matches
-    .nth((n - 1) as usize)
+    let mut result_index = 0;
+    if matches.len() < n as usize {
+        return Ok(result_index); // Return 0 if the N-th match was not found
+    } else {
+        let nth_match = matches
+    .get((n - 1) as usize)
     .ok_or_else(|| ArrowError::ComputeError("N-th match not found".to_string()))?;
     
-    let match_start = nth_match.1.start() as i64 + start - 1;
-    let match_end = nth_match.1.end() as i64 + start - 1;
+    let match_start = nth_match.start() as i64 + start;
+    let match_end = nth_match.end() as i64 + start;
     
-    let result_index = match endoption {
+    result_index = match endoption {
         1 => match_end,  // Return end position of match
         _ => match_start,      // Default: Return start position
     };
+    }
+    // Find the N-th match (1-based index)
+    
     
     // Handle subexpression capturing (if requested)
     
     if subexpr > 0 {
         if let Some(captures) = pattern.captures(&find_slice) {
             if let Some(matched) = captures.get(subexpr as usize) {
-                return Ok(matched.start() as i64 + start - 1);
+                return Ok(matched.start() as i64 + start);
             }
         }
         return Ok(0); // Return 0 if the subexpression was not found
@@ -621,19 +627,7 @@ fn get_index(
     Ok(result_index)
 }
 
-// pub fn get_args_tuple(arg_array: Option<&Int64Array>, is_arg_scalar: bool) -> (Option<&Int64Array>, Option<i64>, bool) {
-//     let (res_array, res_scalar, is_res_scalar) =
-//         if let Some(arg_array) = arg_array {
-//             if is_arg_scalar || arg_array.len() == 1 {
-//                 (None, Some(arg_array.value(0)), true)
-//             } else {
-//                 (Some(arg_array), None, false)
-//             }
-//         } else {
-//             (None, Some(1), true)
-//         };
-//     (res_array, res_scalar, is_res_scalar)
-// }
+
 
 mod tests {
     use  super::*;
@@ -642,24 +636,41 @@ mod tests {
     use datafusion_expr::ScalarFunctionArgs;
     #[test]
     fn test_regex_instr() {
-        test_case_sensitive_regexp_count_scalar();
+        test_case_sensitive_regexp_instr_scalar()
+        // test_case_sensitive_regexp_instr_scalar_start();
+        // test_get_index()
     }
 
-    fn test_case_sensitive_regexp_count_scalar() {
-        let values = ["", "aabca", "abcabc", "abcAbcab", "abcabcabc"];
-        let regex = "abc";
-        let expected: Vec<i64> = vec![0, 1, 1, 1, 1];
+    fn test_get_index() {
+        let value = "";
+        let pattern = Regex::new("").unwrap();
+        let start = 1;
+        let n = 1;
+        let endoption = 0;
+        let subexpr = 0;
+        let result = get_index(Some(value), &pattern, start, n, endoption, subexpr);
+        assert_eq!(result.unwrap(), 0);
+    }
 
-        values.iter().enumerate().for_each(|(pos, &v)| {
+    fn test_case_sensitive_regexp_instr_scalar() {
+        let values = ["hello world", "abcdefg", "xyz123xyz", "no match here", "", "abc", ""];
+        let regex = ["o", "d", "123", "z", "gg", "", ""];
+        // let values = [ "ckbvds"];
+        // let regex = [ "ckd"];
+        let expected: Vec<i64> = vec![5, 4, 4, 0, 0, 0, 0];
+        // let expected: Vec<i64> = vec![1];
+
+        izip!(values.iter(), regex.iter()).enumerate().for_each(|(pos, (&v, &r))| {
             // utf8
             let v_sv = ScalarValue::Utf8(Some(v.to_string()));
-            let regex_sv = ScalarValue::Utf8(Some(regex.to_string()));
+            let regex_sv = ScalarValue::Utf8(Some(r.to_string()));
             let expected = expected.get(pos).cloned();
             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
                 args: vec![ColumnarValue::Scalar(v_sv), ColumnarValue::Scalar(regex_sv)],
                 number_rows: 2,
                 return_type: &Int64,
             });
+            // let res_exp = re.unwrap();
             match re {
                 Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
                     assert_eq!(v, expected, "regexp_instr scalar test failed");
@@ -669,7 +680,7 @@ mod tests {
 
             // largeutf8
             let v_sv = ScalarValue::LargeUtf8(Some(v.to_string()));
-            let regex_sv = ScalarValue::LargeUtf8(Some(regex.to_string()));
+            let regex_sv = ScalarValue::LargeUtf8(Some(r.to_string()));
             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
                 args: vec![ColumnarValue::Scalar(v_sv), ColumnarValue::Scalar(regex_sv)],
                 number_rows: 2,
@@ -684,7 +695,7 @@ mod tests {
 
             // utf8view
             let v_sv = ScalarValue::Utf8View(Some(v.to_string()));
-            let regex_sv = ScalarValue::Utf8View(Some(regex.to_string()));
+            let regex_sv = ScalarValue::Utf8View(Some(r.to_string()));
             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
                 args: vec![ColumnarValue::Scalar(v_sv), ColumnarValue::Scalar(regex_sv)],
                 number_rows: 2,
@@ -698,4 +709,74 @@ mod tests {
             }
         });
     }
+
+//     fn test_case_sensitive_regexp_instr_scalar_start() {
+//         let values = ["hello world", "abcdefg", "xyz123xyz", "no match here", ""];
+//         let regex = ["o", "d", "123", "z", "gg"];
+//         let start = [1, 2, 3, 4, 5];
+//         let expected: Vec<i64> = vec![2, 0, 3, 4, 0];
+
+//         values.iter().enumerate().for_each(|(pos, &v)| {
+//             // utf8
+//             let v_sv = ScalarValue::Utf8(Some(v.to_string()));
+//             let regex_sv = ScalarValue::Utf8(Some(regex.to_string()));
+//             let start_sv = ScalarValue::Int64(Some(start[pos]));
+//             let expected = expected.get(pos).cloned();
+//             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+//                 args: vec![
+//                     ColumnarValue::Scalar(v_sv),
+//                     ColumnarValue::Scalar(regex_sv),
+//                     ColumnarValue::Scalar(start_sv),
+//                 ],
+//                 number_rows: 2,
+//                 return_type: &Int64,
+//             });
+//             match re {
+//                 Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+//                     assert_eq!(v, expected, "regexp_instr scalar test failed");
+//                 }
+//                 _ => panic!("Unexpected result"),
+//             }
+
+//             // largeutf8
+//             let v_sv = ScalarValue::LargeUtf8(Some(v.to_string()));
+//             let regex_sv = ScalarValue::LargeUtf8(Some(regex.to_string()));
+//             let start_sv = ScalarValue::Int64(Some(start[pos]));
+//             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+//                 args: vec![
+//                     ColumnarValue::Scalar(v_sv),
+//                     ColumnarValue::Scalar(regex_sv),
+//                     ColumnarValue::Scalar(start_sv),
+//                 ],
+//                 number_rows: 2,
+//                 return_type: &Int64,
+//             });
+//             match re {
+//                 Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+//                     assert_eq!(v, expected, "regexp_instr scalar test failed");
+//                 }
+//                 _ => panic!("Unexpected result"),
+//             }
+
+//             // utf8view
+//             let v_sv = ScalarValue::Utf8View(Some(v.to_string()));
+//             let regex_sv = ScalarValue::Utf8View(Some(regex.to_string()));
+//             let start_sv = ScalarValue::Int64(Some(start[pos]));
+//             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+//                 args: vec![
+//                     ColumnarValue::Scalar(v_sv),
+//                     ColumnarValue::Scalar(regex_sv),
+//                     ColumnarValue::Scalar(start_sv),
+//                 ],
+//                 number_rows: 2,
+//                 return_type: &Int64,
+//             });
+//             match re {
+//                 Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+//                     assert_eq!(v, expected, "regexp_instr scalar test failed");
+//                 }
+//                 _ => panic!("Unexpected result"),
+//             }
+//     });
+// }
 }
