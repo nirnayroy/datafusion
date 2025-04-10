@@ -2415,7 +2415,12 @@ dependencies = [
  "datafusion-physical-expr-common",
  "half",
  "hashbrown 0.14.5",
+<<<<<<< HEAD
  "indexmap 2.9.0",
+=======
+ "indexmap 2.8.0",
+ "insta",
+>>>>>>> 7eb710d5a (Introduce DynamicFilterSource and DynamicPhysicalExpr (#15568))
  "itertools 0.14.0",
  "log",
  "paste",
