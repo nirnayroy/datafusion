@@ -1443,9 +1443,15 @@ dependencies = [
 
 [[package]]
 name = "clap"
+<<<<<<< HEAD
 version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
+=======
+version = "4.5.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8aa86934b44c19c50f87cc2790e19f54f7a67aedb64101c2e1a2e5ecfb73944"
+>>>>>>> 221df48da (chore(deps): bump clap from 4.5.34 to 4.5.35 (#15668))
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1453,9 +1459,15 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
+<<<<<<< HEAD
 version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efd9466fac8543255d3b1fcad4762c5e116ffe808c8a3043d4263cd4fd4862a2"
+=======
+version = "4.5.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2414dbb2dd0695280da6ea9261e327479e9d37b0630f6b53ba2a11c60c679fd9"
+>>>>>>> 221df48da (chore(deps): bump clap from 4.5.34 to 4.5.35 (#15668))
 dependencies = [
  "anstream",
  "anstyle",
@@ -1637,7 +1649,11 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
+<<<<<<< HEAD
  "clap 4.5.37",
+=======
+ "clap 4.5.35",
+>>>>>>> 221df48da (chore(deps): bump clap from 4.5.34 to 4.5.35 (#15668))
  "criterion-plot",
  "futures",
  "is-terminal",
@@ -1951,7 +1967,11 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-credential-types",
+<<<<<<< HEAD
  "clap 4.5.37",
+=======
+ "clap 4.5.35",
+>>>>>>> 221df48da (chore(deps): bump clap from 4.5.34 to 4.5.35 (#15668))
  "ctor",
  "datafusion",
  "dirs",
@@ -2587,7 +2607,11 @@ dependencies = [
  "bigdecimal",
  "bytes",
  "chrono",
+<<<<<<< HEAD
  "clap 4.5.37",
+=======
+ "clap 4.5.35",
+>>>>>>> 221df48da (chore(deps): bump clap from 4.5.34 to 4.5.35 (#15668))
  "datafusion",
  "env_logger",
  "futures",
@@ -3956,7 +3980,11 @@ checksum = "5297962ef19edda4ce33aaa484386e0a5b3d7f2f4e037cbeee00503ef6b29d33"
 dependencies = [
  "anstream",
  "anstyle",
+<<<<<<< HEAD
  "clap 4.5.37",
+=======
+ "clap 4.5.35",
+>>>>>>> 221df48da (chore(deps): bump clap from 4.5.34 to 4.5.35 (#15668))
  "escape8259",
 ]
 
