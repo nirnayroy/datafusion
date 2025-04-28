@@ -163,8 +163,8 @@ impl ScalarUDFImpl for RegexpInstrFunc {
 
 pub fn regexp_instr_func(args: &[ArrayRef]) -> Result<ArrayRef> {
     let args_len = args.len();
-    if !(2..=4).contains(&args_len) {
-        return exec_err!("regexp_instr was called with {args_len} arguments. It requires at least 2 and at most 4.");
+    if !(2..=7).contains(&args_len) {
+        return exec_err!("regexp_instr was called with {args_len} arguments. It requires at least 2 and at most 7.");
     }
 
     let values = &args[0];
@@ -636,21 +636,13 @@ mod tests {
     use datafusion_expr::ScalarFunctionArgs;
     #[test]
     fn test_regex_instr() {
-        test_case_sensitive_regexp_instr_scalar()
-        // test_case_sensitive_regexp_instr_scalar_start();
+        test_case_sensitive_regexp_instr_scalar();
+        test_case_sensitive_regexp_instr_scalar_start();
+        test_case_sensitive_regexp_instr_scalar_nth();
+        test_case_sensitive_regexp_instr_scalar_endoption();
         // test_get_index()
     }
 
-    fn test_get_index() {
-        let value = "";
-        let pattern = Regex::new("").unwrap();
-        let start = 1;
-        let n = 1;
-        let endoption = 0;
-        let subexpr = 0;
-        let result = get_index(Some(value), &pattern, start, n, endoption, subexpr);
-        assert_eq!(result.unwrap(), 0);
-    }
 
     fn test_case_sensitive_regexp_instr_scalar() {
         let values = ["hello world", "abcdefg", "xyz123xyz", "no match here", "", "abc", ""];
@@ -710,73 +702,236 @@ mod tests {
         });
     }
 
-//     fn test_case_sensitive_regexp_instr_scalar_start() {
-//         let values = ["hello world", "abcdefg", "xyz123xyz", "no match here", ""];
-//         let regex = ["o", "d", "123", "z", "gg"];
-//         let start = [1, 2, 3, 4, 5];
-//         let expected: Vec<i64> = vec![2, 0, 3, 4, 0];
+    fn test_case_sensitive_regexp_instr_scalar_start() {
+        let values = ["abcabcabc", "abcabcabc", ""];
+        let regex = ["abc", "abc", "gg"];
+        let start = [4, 5, 5];
+        let expected: Vec<i64> = vec![4, 7, 0];
 
-//         values.iter().enumerate().for_each(|(pos, &v)| {
-//             // utf8
-//             let v_sv = ScalarValue::Utf8(Some(v.to_string()));
-//             let regex_sv = ScalarValue::Utf8(Some(regex.to_string()));
-//             let start_sv = ScalarValue::Int64(Some(start[pos]));
-//             let expected = expected.get(pos).cloned();
-//             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
-//                 args: vec![
-//                     ColumnarValue::Scalar(v_sv),
-//                     ColumnarValue::Scalar(regex_sv),
-//                     ColumnarValue::Scalar(start_sv),
-//                 ],
-//                 number_rows: 2,
-//                 return_type: &Int64,
-//             });
-//             match re {
-//                 Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
-//                     assert_eq!(v, expected, "regexp_instr scalar test failed");
-//                 }
-//                 _ => panic!("Unexpected result"),
-//             }
+        izip!(values.iter(), regex.iter(), start.iter()).enumerate().for_each(|(pos, (&v, &r, &s))| {
+            // utf8
+            let v_sv = ScalarValue::Utf8(Some(v.to_string()));
+            let regex_sv = ScalarValue::Utf8(Some(r.to_string()));
+            let start_sv = ScalarValue::Int64(Some(s));
+            let expected = expected.get(pos).cloned();
+            let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+                args: vec![
+                    ColumnarValue::Scalar(v_sv),
+                    ColumnarValue::Scalar(regex_sv),
+                    ColumnarValue::Scalar(start_sv),
+                ],
+                number_rows: 3,
+                return_type: &Int64,
+            });
+            match re {
+                Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                    assert_eq!(v, expected, "regexp_instr scalar test failed");
+                }
+                _ => panic!("Unexpected result"),
+            }
 
-//             // largeutf8
-//             let v_sv = ScalarValue::LargeUtf8(Some(v.to_string()));
-//             let regex_sv = ScalarValue::LargeUtf8(Some(regex.to_string()));
-//             let start_sv = ScalarValue::Int64(Some(start[pos]));
-//             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
-//                 args: vec![
-//                     ColumnarValue::Scalar(v_sv),
-//                     ColumnarValue::Scalar(regex_sv),
-//                     ColumnarValue::Scalar(start_sv),
-//                 ],
-//                 number_rows: 2,
-//                 return_type: &Int64,
-//             });
-//             match re {
-//                 Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
-//                     assert_eq!(v, expected, "regexp_instr scalar test failed");
-//                 }
-//                 _ => panic!("Unexpected result"),
-//             }
+            // largeutf8
+            let v_sv = ScalarValue::LargeUtf8(Some(v.to_string()));
+            let regex_sv = ScalarValue::LargeUtf8(Some(r.to_string()));
+            let start_sv = ScalarValue::Int64(Some(s));
+            let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+                args: vec![
+                    ColumnarValue::Scalar(v_sv),
+                    ColumnarValue::Scalar(regex_sv),
+                    ColumnarValue::Scalar(start_sv),
+                ],
+                number_rows: 3,
+                return_type: &Int64,
+            });
+            match re {
+                Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                    assert_eq!(v, expected, "regexp_instr scalar test failed");
+                }
+                _ => panic!("Unexpected result"),
+            }
 
-//             // utf8view
-//             let v_sv = ScalarValue::Utf8View(Some(v.to_string()));
-//             let regex_sv = ScalarValue::Utf8View(Some(regex.to_string()));
-//             let start_sv = ScalarValue::Int64(Some(start[pos]));
-//             let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
-//                 args: vec![
-//                     ColumnarValue::Scalar(v_sv),
-//                     ColumnarValue::Scalar(regex_sv),
-//                     ColumnarValue::Scalar(start_sv),
-//                 ],
-//                 number_rows: 2,
-//                 return_type: &Int64,
-//             });
-//             match re {
-//                 Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
-//                     assert_eq!(v, expected, "regexp_instr scalar test failed");
-//                 }
-//                 _ => panic!("Unexpected result"),
-//             }
-//     });
-// }
+            // utf8view
+            let v_sv = ScalarValue::Utf8View(Some(v.to_string()));
+            let regex_sv = ScalarValue::Utf8View(Some(r.to_string()));
+            let start_sv = ScalarValue::Int64(Some(s));
+            let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+                args: vec![
+                    ColumnarValue::Scalar(v_sv),
+                    ColumnarValue::Scalar(regex_sv),
+                    ColumnarValue::Scalar(start_sv),
+                ],
+                number_rows: 3,
+                return_type: &Int64,
+            });
+            match re {
+                Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                    assert_eq!(v, expected, "regexp_instr scalar test failed");
+                }
+                _ => panic!("Unexpected result"),
+            }
+    });
+}
+
+    fn test_case_sensitive_regexp_instr_scalar_nth() {
+        let values = ["abcabcabc", "abcabcabc", "abcabcabc", "abcabcabc"];
+        let regex = ["abc", "abc", "abc", "abc"];
+        let start = [1, 1, 1, 1];
+        let nth = [1, 2, 3, 4];
+        let expected: Vec<i64> = vec![1, 4, 7, 0];
+
+        izip!(values.iter(), regex.iter(), start.iter(), nth.iter()).enumerate().for_each(|(pos, (&v, &r, &s, &n))| {
+            // utf8
+            let v_sv = ScalarValue::Utf8(Some(v.to_string()));
+            let regex_sv = ScalarValue::Utf8(Some(r.to_string()));
+            let start_sv = ScalarValue::Int64(Some(s));
+            let nth_sv = ScalarValue::Int64(Some(n));
+            let expected = expected.get(pos).cloned();
+            let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+                args: vec![
+                    ColumnarValue::Scalar(v_sv),
+                    ColumnarValue::Scalar(regex_sv),
+                    ColumnarValue::Scalar(start_sv),
+                    ColumnarValue::Scalar(nth_sv),
+                ],
+                number_rows: 4,
+                return_type: &Int64,
+            });
+            match re {
+                Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                    assert_eq!(v, expected, "regexp_instr scalar test failed");
+                }
+                _ => panic!("Unexpected result"),
+            }
+
+            // largeutf8
+            let v_sv = ScalarValue::LargeUtf8(Some(v.to_string()));
+            let regex_sv = ScalarValue::LargeUtf8(Some(r.to_string()));
+            let start_sv = ScalarValue::Int64(Some(s));
+            let nth_sv = ScalarValue::Int64(Some(n));
+            let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+                args: vec![
+                    ColumnarValue::Scalar(v_sv),
+                    ColumnarValue::Scalar(regex_sv),
+                    ColumnarValue::Scalar(start_sv),
+                    ColumnarValue::Scalar(nth_sv),
+                ],
+                number_rows: 4,
+                return_type: &Int64,
+            });
+            match re {
+                Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                    assert_eq!(v, expected, "regexp_instr scalar test failed");
+                }
+                _ => panic!("Unexpected result"),
+            }
+
+            // utf8view
+            let v_sv = ScalarValue::Utf8View(Some(v.to_string()));
+            let regex_sv = ScalarValue::Utf8View(Some(r.to_string()));
+            let start_sv = ScalarValue::Int64(Some(s));
+            let nth_sv = ScalarValue::Int64(Some(n));
+            let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+                args: vec![
+                    ColumnarValue::Scalar(v_sv),
+                    ColumnarValue::Scalar(regex_sv),
+                    ColumnarValue::Scalar(start_sv),
+                    ColumnarValue::Scalar(nth_sv),
+                ],
+                number_rows: 4,
+                return_type: &Int64,
+            });
+            match re {
+                Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                    assert_eq!(v, expected, "regexp_instr scalar test failed");
+                }
+                _ => panic!("Unexpected result"),
+            }
+    });
+}
+
+    fn test_case_sensitive_regexp_instr_scalar_endoption() {
+    let values = ["abcdefg", "abcdefg"];
+    let regex = ["cd", "cd"];
+    let start = [1, 1];
+    let nth = [1, 1];
+    let endoption = [0, 1];
+    let expected: Vec<i64> = vec![3, 5];
+
+    izip!(values.iter(), regex.iter(), start.iter(), nth.iter(), endoption.iter()).enumerate().for_each(|(pos, (&v, &r, &s, &n, &e))| {
+        // utf8
+        let v_sv = ScalarValue::Utf8(Some(v.to_string()));
+        let regex_sv = ScalarValue::Utf8(Some(r.to_string()));
+        let start_sv = ScalarValue::Int64(Some(s));
+        let nth_sv = ScalarValue::Int64(Some(n));
+        let endoption_sv = ScalarValue::Int64(Some(e));
+        let expected = expected.get(pos).cloned();
+        let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+            args: vec![
+                ColumnarValue::Scalar(v_sv),
+                ColumnarValue::Scalar(regex_sv),
+                ColumnarValue::Scalar(start_sv),
+                ColumnarValue::Scalar(nth_sv),
+                ColumnarValue::Scalar(endoption_sv)
+            ],
+            number_rows: 5,
+            return_type: &Int64,
+        });
+        match re {
+            Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                assert_eq!(v, expected, "regexp_instr scalar test failed");
+            }
+            _ => panic!("Unexpected result"),
+        }
+
+        // largeutf8
+        let v_sv = ScalarValue::LargeUtf8(Some(v.to_string()));
+        let regex_sv = ScalarValue::LargeUtf8(Some(r.to_string()));
+        let start_sv = ScalarValue::Int64(Some(s));
+        let nth_sv = ScalarValue::Int64(Some(n));
+        let endoption_sv = ScalarValue::Int64(Some(e));
+        let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+            args: vec![
+                ColumnarValue::Scalar(v_sv),
+                ColumnarValue::Scalar(regex_sv),
+                ColumnarValue::Scalar(start_sv),
+                ColumnarValue::Scalar(nth_sv),
+                ColumnarValue::Scalar(endoption_sv)
+            ],
+            number_rows: 5,
+            return_type: &Int64,
+        });
+        match re {
+            Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                assert_eq!(v, expected, "regexp_instr scalar test failed");
+            }
+            _ => panic!("Unexpected result"),
+        }
+
+        // utf8view
+        let v_sv = ScalarValue::Utf8View(Some(v.to_string()));
+        let regex_sv = ScalarValue::Utf8View(Some(r.to_string()));
+        let start_sv = ScalarValue::Int64(Some(s));
+        let nth_sv = ScalarValue::Int64(Some(n));
+        let endoption_sv = ScalarValue::Int64(Some(e));
+        let re = RegexpInstrFunc::new().invoke_with_args(ScalarFunctionArgs {
+            args: vec![
+                ColumnarValue::Scalar(v_sv),
+                ColumnarValue::Scalar(regex_sv),
+                ColumnarValue::Scalar(start_sv),
+                ColumnarValue::Scalar(nth_sv),
+                ColumnarValue::Scalar(endoption_sv)
+            ],
+            number_rows: 5,
+            return_type: &Int64,
+        });
+        match re {
+            Ok(ColumnarValue::Scalar(ScalarValue::Int64(v))) => {
+                assert_eq!(v, expected, "regexp_instr scalar test failed");
+            }
+            _ => panic!("Unexpected result"),
+        }
+});
+}
+
+    
 }
