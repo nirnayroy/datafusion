@@ -62,6 +62,26 @@ pub mod expr_fn {
         super::regexp_match().call(args)
     }
 
+    /// Returns index of regular expression matches in a string.
+    pub fn regexp_instr(values: Expr, regex: Expr, start: Option<Expr>, n: Option<Expr>, endoption: Option<Expr>, flags: Option<Expr>, subexpr: Option<Expr>) -> Expr {
+        let mut args = vec![values, regex];
+        if let Some(start) = start {
+            args.push(start);
+        };
+        if let Some(n) = n {
+            args.push(n);
+        };
+        if let Some(endoption) = endoption {
+            args.push(endoption);
+        };
+        if let Some(flags) = flags {
+            args.push(flags);
+        };
+        if let Some(subexpr) = subexpr {
+            args.push(subexpr);
+        };
+        super::regexp_instr().call(args)
+    }    
     /// Returns true if a has at least one match in a string, false otherwise.
     pub fn regexp_like(values: Expr, regex: Expr, flags: Option<Expr>) -> Expr {
         let mut args = vec![values, regex];
