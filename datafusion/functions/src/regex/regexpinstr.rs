@@ -190,7 +190,7 @@ pub fn regexp_instr_func(args: &[ArrayRef]) -> Result<ArrayRef> {
 }
 
 /// `arrow-rs` style implementation of `regexp_instr` function.
-/// This function `regexp_instr` is responsible for counting the occurrences of a regular expression pattern
+/// This function `regexp_instr` is responsible for returning the index of a regular expression pattern
 /// within a string array. It supports optional start positions and flags for case insensitivity.
 ///
 /// The function accepts a variable number of arguments:
@@ -331,64 +331,12 @@ pub fn regexp_instr(
             is_subexpr_scalar,
         ),
         _ => Err(ArrowError::ComputeError(
-            "regexp_count() expected the input arrays to be of type Utf8, LargeUtf8, or Utf8View and the data types of the values, regex_array, and flags_array to match".to_string(),
+            "regexp_instr() expected the input arrays to be of type Utf8, LargeUtf8, or Utf8View and the data types of the values, regex_array, and flags_array to match".to_string(),
         )),
     }
     }
 
 
-
-// pub fn cast_to_array(arg_array: Option<&Int64Array>, is_scalar: bool, cast_length: usize)  -> Result<Option<&Int64Array>, ArrowError> {
-//     let arg_array = 
-//     if let Some(arg_array) = arg_array {
-//         if is_scalar || arg_array.len() == 1 {
-//             Ok(Some((&Int64Array::from(vec![arg_array.value(0); cast_length]))))
-//         } else if arg_array.len() == cast_length as usize {
-//             Ok(Some(arg_array))
-//         } else {
-//             Err(ArrowError::ComputeError(format!(
-//                 "Argument array must be the same length as values array; got {} and {}",
-//                 arg_array.len(),
-//                 cast_length,
-//             )))
-//         }
-//     } else {
-//             Ok(Some(&Int64Array::from(vec![1; cast_length])))
-//         };
-//     arg_array
-//     }
-
-
-// pub struct ProcessArgument<'a, T> {
-//     arg_array: Option<&'a T>,
-//     is_scalar: bool,
-//     cast_length: usize,
-// }
-// pub trait GetArray {
-//     fn cast_to_array<T>(&self) -> T;
-// }
-
-// impl GetArray for ProcessArgument {
-//     fn cast_to_array<T>(&self) -> T {
-//         let arg_array = 
-//     if let Some(arg_array) = self.arg_array {
-//         if self.is_scalar || arg_array.len() == 1 {
-//             Ok(Some((&Int64Array::from(vec![self.arg_array.value(0); self.cast_length]))))
-//         } else if self.arg_array.len() == self.cast_length as usize {
-//             Ok(Some(self.arg_array))
-//         } else {
-//             Err(ArrowError::ComputeError(format!(
-//                 "Argument array must be the same length as values array; got {} and {}",
-//                 self.arg_array.len(),
-//                 self.cast_length,
-//             )))
-//         }
-//     } else {
-//             Ok(Some(&Int64Array::from(vec![1; cast_length])))
-//         };
-//     self.arg_array
-//     }
-// }
 
 enum ScalarOrArray<T> {
     Scalar(T),
@@ -423,7 +371,6 @@ where
     S: StringArrayType<'a>,
 {
     let len = values.len();
-
     let regex_input = if is_regex_scalar || regex_array.len() == 1 {
         ScalarOrArray::Scalar(regex_array.value(0))
     } else {
@@ -435,43 +382,52 @@ where
         if is_start_scalar || start.len() == 1 {
             ScalarOrArray::Scalar(start.value(0))
         } else {
-            let start_vec: Vec<i64> = start_array
-                .iter()
-                .map(|array| array.value(0)) // Extract the value from the array
-                .collect();
+            let start_vec: Vec<i64> = (0..start.len())
+            .map(|i| if start.is_null(i) { 0 } else { start.value(i) }) // handle nulls as 0
+            .collect();
+            
             ScalarOrArray::Array(start_vec)
+            
         }
     } else {
-        
-        ScalarOrArray::Scalar(1) // Default start = 1
+        if len == 1{ScalarOrArray::Scalar(1)}
+        else {
+            ScalarOrArray::Array(vec![1; len])}
+         // Default start = 1
     };
 
     let nth_input = if let Some(nth) = nth_array {
         if is_nth_scalar || nth.len() == 1 {
             ScalarOrArray::Scalar(nth.value(0))
         } else {
-            let nth_vec: Vec<i64> = nth_array
-                .iter()
-                .map(|array| array.value(0)) // Extract the value from the array
-                .collect();
+            let nth_vec: Vec<i64> = (0..nth.len())
+            .map(|i| if nth.is_null(i) { 0 } else { nth.value(i) }) // handle nulls as 0
+            .collect();
             ScalarOrArray::Array(nth_vec)
         }
     } else {
-        ScalarOrArray::Scalar(1) // Default nth = 0
+
+        if len == 1 {ScalarOrArray::Scalar(1)}  // Default nth = 0
+        else {
+            ScalarOrArray::Array(vec![1; len])
+        }
+       
     };
 
     let endoption_input = if let Some(endoption) = endoption_array {
         if is_endoption_scalar || endoption.len() == 1 {
             ScalarOrArray::Scalar(endoption.value(0))
         } else {
-            let endoption_vec: Vec<i64> = endoption_array
-                .iter()
-                .map(|array| array.value(0)) // Extract the value from the array
-                .collect();
+            let endoption_vec: Vec<i64> = (0..endoption.len())
+            .map(|i| if endoption.is_null(i) { 0 } else { endoption.value(i) }) // handle nulls as 0
+            .collect();
             ScalarOrArray::Array(endoption_vec)
         }
     } else {
-        ScalarOrArray::Scalar(0) // Default endoption = 0
+        if len == 1 {ScalarOrArray::Scalar(0)}  // Default nth = 0
+        else {
+            ScalarOrArray::Array(vec![0; len])
+        }// Default endoption = 0
     };
 
     let flags_input = if let Some(ref flags) = flags_array {
@@ -482,21 +438,26 @@ where
             ScalarOrArray::Array(flags_vec)
         }
     } else {
-        ScalarOrArray::Scalar("") // Default flags = ""
+        if len == 1 {ScalarOrArray::Scalar("")}  // Default flags = ""
+        else {
+            ScalarOrArray::Array(vec![""; len])
+        } // Default flags = ""
     };
 
     let subexp_input = if let Some(subexp) = subexp_array {
         if is_subexp_scalar || subexp.len() == 1 {
             ScalarOrArray::Scalar(subexp.value(0))
         } else {
-            let subexp_vec: Vec<i64> = subexp_array
-                .iter()
-                .map(|array| array.value(0)) // Extract the value from the array
-                .collect();
+            let subexp_vec: Vec<i64> = (0..subexp.len())
+            .map(|i| if subexp.is_null(i) { 0 } else { subexp.value(i) }) // handle nulls as 0
+            .collect();
             ScalarOrArray::Array(subexp_vec)
         }
     } else {
-        ScalarOrArray::Scalar(0) // Default subexp = 0
+        if len == 1{ScalarOrArray::Scalar(0)}  // Default subexp = 0
+        else {
+            ScalarOrArray::Array(vec![0; len])
+        }
     };
 
     let mut regex_cache = HashMap::new();
@@ -640,7 +601,23 @@ mod tests {
         test_case_sensitive_regexp_instr_scalar_start();
         test_case_sensitive_regexp_instr_scalar_nth();
         test_case_sensitive_regexp_instr_scalar_endoption();
-        // test_get_index()
+
+        test_case_sensitive_regexp_instr_array::<GenericStringArray<i32>>();
+        test_case_sensitive_regexp_instr_array::<GenericStringArray<i64>>();
+        test_case_sensitive_regexp_instr_array::<StringViewArray>();
+
+        test_case_sensitive_regexp_instr_array_start::<GenericStringArray<i32>>();
+        test_case_sensitive_regexp_instr_array_start::<GenericStringArray<i64>>();
+        test_case_sensitive_regexp_instr_array_start::<StringViewArray>();
+
+        test_case_sensitive_regexp_instr_array_nth::<GenericStringArray<i32>>();
+        test_case_sensitive_regexp_instr_array_nth::<GenericStringArray<i64>>();
+        test_case_sensitive_regexp_instr_array_nth::<StringViewArray>();
+
+        test_case_sensitive_regexp_instr_array_endoption::<GenericStringArray<i32>>();
+        test_case_sensitive_regexp_instr_array_endoption::<GenericStringArray<i64>>();
+        test_case_sensitive_regexp_instr_array_endoption::<StringViewArray>();
+
     }
 
 
@@ -933,5 +910,85 @@ mod tests {
 });
 }
 
-    
+    fn test_case_sensitive_regexp_instr_array<A>()
+    where
+        A: From<Vec<&'static str>> + Array + 'static,
+    {
+        let values = A::from(vec!["hello world", "abcdefg", "xyz123xyz", "no match here", "", "abc", ""]);
+        let regex = A::from(vec!["o", "d", "123", "z", "gg", "", ""]);
+        // let values = [ "ckbvds"];
+        // let regex = [ "ckd"];
+        let expected = Int64Array::from(vec![5, 4, 4, 0, 0, 0, 0]);
+        let re = regexp_instr_func(&[Arc::new(values), Arc::new(regex)]).unwrap();
+        assert_eq!(re.as_ref(), &expected);
+    }
+
+    fn test_case_sensitive_regexp_instr_array_start<A>()
+    where
+        A: From<Vec<&'static str>> + Array + 'static,
+    {
+
+        let values = A::from(vec!["abcabcabc", "abcabcabc", ""]);
+        let regex = A::from(vec!["abc", "abc", "gg"]);
+        let start = Int64Array::from(vec![4, 5, 5]);
+        let expected = Int64Array::from(vec![4, 7, 0]);
+
+
+        let re = regexp_instr_func(&[Arc::new(values), Arc::new(regex), Arc::new(start)])
+            .unwrap();
+        assert_eq!(re.as_ref(), &expected);
+    }
+
+    fn test_case_sensitive_regexp_instr_array_nth<A>()
+    where
+        A: From<Vec<&'static str>> + Array + 'static,
+    {
+        let values = A::from(vec!["abcabcabc", "abcabcabc", "abcabcabc", "abcabcabc"]);
+        let regex = A::from(vec!["abc", "abc", "abc", "abc"]);
+        let start = Int64Array::from(vec![1, 1, 1, 1]);
+        let nth = Int64Array::from(vec![1, 2, 3, 4]);
+        let expected = Int64Array::from(vec![1, 4, 7, 0]);
+
+        let re = regexp_instr_func(&[Arc::new(values), Arc::new(regex), Arc::new(start), Arc::new(nth)])
+            .unwrap();
+        assert_eq!(re.as_ref(), &expected);
+    }
+
+    fn test_case_sensitive_regexp_instr_array_endoption<A>()
+    where
+        A: From<Vec<&'static str>> + Array + 'static,
+    {
+        let values = A::from(vec!["abcdefg", "abcdefg"]);
+        let regex = A::from(vec!["cd", "cd"]);
+        let start = Int64Array::from(vec![1, 1]);
+        let nth = Int64Array::from(vec![1, 1]);
+        let endoption = Int64Array::from(vec![0, 1]);
+
+        let expected = Int64Array::from(vec![3, 5]);
+
+        let re = regexp_instr_func(&[Arc::new(values), Arc::new(regex), Arc::new(start), Arc::new(nth), Arc::new(endoption)])
+            .unwrap();
+        assert_eq!(re.as_ref(), &expected);
+    }
+
+    fn test_case_insensitive_regexp_instr_array_flags<A>()
+    where
+        A: From<Vec<&'static str>> + Array + 'static,
+    {
+        let values = A::from(vec!["", "aAbca", "abcabc", "abcAbcab", "abcabcAbc"]);
+        let regex = A::from(vec!["", "abc", "a", "bc", "ab"]);
+        let start = Int64Array::from(vec![1]);
+        let flags = A::from(vec!["", "i", "", "", "i"]);
+
+        let expected = Int64Array::from(vec![0, 1, 2, 2, 3]);
+
+        let re = regexp_instr_func(&[
+            Arc::new(values),
+            Arc::new(regex),
+            Arc::new(start),
+            Arc::new(flags),
+        ])
+        .unwrap();
+        assert_eq!(re.as_ref(), &expected);
+    }  
 }
